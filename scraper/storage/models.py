@@ -17,7 +17,7 @@ class Run(Base):
     site: Mapped[str] = mapped_column(String(100), index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="running")  # running|ok|error|dry-run
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running|ok|error|interrupted|dry-run
     pages: Mapped[int] = mapped_column(Integer, default=0)
     items_new: Mapped[int] = mapped_column(Integer, default=0)
     items_updated: Mapped[int] = mapped_column(Integer, default=0)

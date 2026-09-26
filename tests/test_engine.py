@@ -12,8 +12,8 @@ def test_end_to_end_and_idempotent(site_yaml, db_url, tmp_path):
     repo = Repo(db_url)
 
     rep = Engine(cfg, repo).run_sync()
-    # 2 páginas de listado + 3 detalles (el item sin texto no tiene detail_url)
-    assert rep.pages == 5
+    # 2 páginas de listado + 2 fichas de autor (la de Ana sale dos veces pero se descarga una)
+    assert rep.pages == 4
     assert rep.items_seen == 4
     assert rep.items_new == 3
     assert rep.errors == 1  # el registro sin 'texto' (required) se audita y no se guarda
@@ -53,3 +53,52 @@ def test_robots_blocks(site_server, site_yaml, db_url):
     cfg.start_urls = ["/privado/index.html"]
     rep = Engine(cfg, Repo(db_url)).run_sync()
     assert rep.pages == 0 and rep.errors >= 1
+
+
+def test_url_template_end_is_not_an_error(site_yaml, db_url):
+    cfg = load_site(site_yaml)
+    cfg.pagination.next_selector = None
+    cfg.pagination.url_template = "/page{page}.html"
+    cfg.pagination.max_pages = 5
+    rep = Engine(cfg, Repo(db_url)).run_sync()
+    # index -> page2 -> page3 (listado vacío): fin sin error
+    assert rep.items_new == 3
+    assert rep.errors == 1  # solo el registro sin 'texto'
+
+
+def test_url_template_404_is_not_an_error(site_yaml, db_url):
+    cfg = load_site(site_yaml)
+    cfg.pagination.next_selector = None
+    cfg.pagination.url_template = "/pagina{page}.html"  # no existe: 404 en la p2
+    rep = Engine(cfg, Repo(db_url)).run_sync()
+    assert rep.items_new == 2 and rep.errors == 0
+
+
+def test_meta_charset_is_respected(site_server):
+    import asyncio
+
+    from scraper.config import Politeness
+    from scraper.fetch.http import HttpFetcher
+
+    async def go():
+        async with HttpFetcher(Politeness(delay_seconds=0, respect_robots=False)) as f:
+            return await f.fetch(f"{site_server}/latin1.html")
+
+    assert "Camión de España" in asyncio.run(go()).html
+
+
+def test_cancelled_run_is_not_marked_ok(site_yaml, db_url, monkeypatch):
+    import asyncio
+
+    import pytest
+
+    async def cancel(*a, **k):
+        raise asyncio.CancelledError  # lo que llega al motor al pulsar Ctrl+C
+
+    cfg = load_site(site_yaml)
+    repo = Repo(db_url)
+    engine = Engine(cfg, repo)
+    monkeypatch.setattr(engine, "_crawl_listing", cancel)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(engine.run_async())
+    assert repo.last_runs(cfg.name)[0].status == "interrupted"

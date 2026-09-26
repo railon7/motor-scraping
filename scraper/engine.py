@@ -44,6 +44,8 @@ class Engine:
         self.limit = limit  # máximo de items a procesar (útil en dry-run)
         self.report = RunReport(site=cfg.name, dry_run=dry_run)
         self.run = None
+        # Una descarga por URL de detalle y ejecución (p. ej. la misma ficha de autor en varios items)
+        self._details: dict[str, asyncio.Task] = {}
 
     def _make_fetcher(self):
         if self.cfg.fetch.mode == "browser":
@@ -54,13 +56,14 @@ class Engine:
     async def run_async(self) -> RunReport:
         if self.repo:
             self.run = self.repo.start_run(self.cfg.name, dry_run=self.dry_run)
-        status = "ok"
+        status = "interrupted"  # si sale por Ctrl+C / cancelación no queda como "ok"
         try:
             async with self._make_fetcher() as fetcher:
                 for start in self.cfg.start_urls:
                     await self._crawl_listing(fetcher, urljoin(self.cfg.base_url + "/", start))
                     if self._reached_limit():
                         break
+            status = "ok"
         except Exception as e:  # error global -> run en estado error
             status = "error"
             self._error(None, "fetch", f"{type(e).__name__}: {e}")
@@ -86,7 +89,7 @@ class Engine:
         if self.repo and self.run and not self.dry_run:
             self.repo.log_error(self.run, url, kind, msg)
 
-    async def _fetch_page(self, fetcher, url: str, kind: str):
+    async def _fetch_page(self, fetcher, url: str, kind: str, not_found_ok: bool = False):
         try:
             res = await fetcher.fetch(url)
         except Exception as e:
@@ -96,7 +99,10 @@ class Engine:
         if self.repo and self.run and not self.dry_run:
             self.repo.log_page(self.run, res.url, kind, res.status, res.elapsed_ms)
         if res.status >= 400:
-            self._error(url, "fetch", f"HTTP {res.status}")
+            if res.status in (404, 410) and not_found_ok:
+                log.info("[%s] %s devuelve HTTP %d, fin del listado", self.cfg.name, url, res.status)
+            else:
+                self._error(url, "fetch", f"HTTP {res.status}")
             return None
         return res
 
@@ -107,13 +113,17 @@ class Engine:
             seen_urls.add(url)
             page_no += 1
             log.info("[%s] listado p%d %s", self.cfg.name, page_no, url)
-            res = await self._fetch_page(fetcher, url, "list")
+            # Pasada la primera página, un 404 es la forma habitual de decir "no hay más"
+            res = await self._fetch_page(fetcher, url, "list", not_found_ok=page_no > 1)
             if res is None:
                 return
             tree = parse_html(res.html)
             nodes = tree.css(self.cfg.list.item_selector)
             if not nodes:
-                self._error(url, "parse", f"item_selector '{self.cfg.list.item_selector}' no devolvió elementos")
+                if page_no > 1:  # página vacía tras la primera: fin normal de la paginación
+                    log.info("[%s] sin items en p%d, fin del listado", self.cfg.name, page_no)
+                else:
+                    self._error(url, "parse", f"item_selector '{self.cfg.list.item_selector}' no devolvió elementos")
                 return
 
             # Procesamos items de la página con concurrencia limitada por el fetcher
@@ -129,16 +139,24 @@ class Engine:
                 return
             url = next_page_url(self.cfg.pagination, res.url, tree, page_no, self.cfg.base_url)
 
+    async def _fetch_detail(self, fetcher, url: str) -> tuple[str, dict, list[str]] | None:
+        res = await self._fetch_page(fetcher, url, "detail")
+        if res is None:
+            return None
+        data, errs = extract_fields(parse_html(res.html), self.cfg.detail.fields, res.url)
+        return res.url, data, errs
+
     async def _process_item(self, fetcher, node, list_url: str) -> None:
         data, errs = extract_fields(node, self.cfg.list.fields, list_url)
         source_url = list_url
         detail_url = extract_one(node, self.cfg.list.detail_url, base_url=list_url) if self.cfg.list.detail_url else None
 
         if self.cfg.detail and detail_url:
-            res = await self._fetch_page(fetcher, detail_url, "detail")
-            if res is not None:
-                source_url = res.url
-                d_data, d_errs = extract_fields(parse_html(res.html), self.cfg.detail.fields, res.url)
+            if detail_url not in self._details:
+                self._details[detail_url] = asyncio.create_task(self._fetch_detail(fetcher, detail_url))
+            detail = await self._details[detail_url]
+            if detail is not None:
+                source_url, d_data, d_errs = detail
                 data.update(d_data)
                 errs += d_errs
         elif detail_url:

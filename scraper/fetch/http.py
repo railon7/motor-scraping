@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import codecs
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -16,6 +18,26 @@ from scraper.fetch.robots import RobotsCache
 log = logging.getLogger("scraper.fetch")
 
 DEFAULT_UA = "TazukeScraper/0.1 (+https://tazuke.com)"
+RETRY_STATUS = (429, 500, 502, 503, 504)
+MAX_RETRY_AFTER = 120  # segundos; si el sitio pide esperar más, mejor fallar y reintentar otro día
+_META_CHARSET = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?([\w-]+)""", re.I)
+
+
+def _retry_after(r: httpx.Response) -> float | None:
+    """Segundos indicados en la cabecera Retry-After (solo formato numérico)."""
+    v = r.headers.get("retry-after", "").strip()
+    return min(float(v), MAX_RETRY_AFTER) if v.isdigit() else None
+
+
+def _detect_encoding(content: bytes) -> str:
+    """Codificación cuando la cabecera Content-Type no la indica: <meta charset> o UTF-8."""
+    m = _META_CHARSET.search(content[:4096])
+    if m:
+        try:
+            return codecs.lookup(m.group(1).decode("ascii")).name
+        except LookupError:
+            pass
+    return "utf-8"
 
 
 @dataclass
@@ -64,6 +86,7 @@ class HttpFetcher:
             headers=self.headers,
             timeout=self.p.timeout_seconds,
             follow_redirects=True,
+            default_encoding=_detect_encoding,
         )
         return self
 
@@ -78,6 +101,7 @@ class HttpFetcher:
 
         last_exc: Exception | None = None
         for attempt in range(1, self.p.max_retries + 1):
+            wait = min(2 ** attempt, 30)
             async with self.sem:
                 await self.limiter.wait(url)
                 t0 = time.monotonic()
@@ -88,9 +112,11 @@ class HttpFetcher:
                     log.warning("intento %d/%d %s: %s", attempt, self.p.max_retries, url, e)
                 else:
                     elapsed = int((time.monotonic() - t0) * 1000)
-                    if r.status_code in (429, 500, 502, 503, 504) and attempt < self.p.max_retries:
-                        log.warning("HTTP %d en %s, reintento %d", r.status_code, url, attempt)
+                    if r.status_code in RETRY_STATUS and attempt < self.p.max_retries:
+                        wait = _retry_after(r) or wait
+                        log.warning("HTTP %d en %s, reintento %d en %.0fs", r.status_code, url, attempt, wait)
                     else:
                         return FetchResult(url=str(r.url), status=r.status_code, html=r.text, elapsed_ms=elapsed)
-            await asyncio.sleep(min(2 ** attempt, 30))
+            if attempt < self.p.max_retries:
+                await asyncio.sleep(wait)
         raise RuntimeError(f"No se pudo descargar {url}: {last_exc}")
