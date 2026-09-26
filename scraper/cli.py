@@ -1,0 +1,188 @@
+"""CLI del motor: scraper run | dry-run | export | init-site | status | validate."""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import typer
+from dotenv import load_dotenv
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.table import Table
+
+from scraper import __version__
+from scraper.config import load_site
+from scraper.engine import Engine, RunReport
+from scraper.export import export_items
+from scraper.storage.repo import Repo
+
+app = typer.Typer(help="Motor de web scraping genérico (Tazuke).", invoke_without_command=True)
+console = Console()
+
+SITE_TEMPLATE = """\
+name: {name}
+description: Describe aquí qué se extrae y para qué proyecto/cliente
+base_url: https://www.ejemplo.es
+
+politeness:
+  delay_seconds: 2
+  max_concurrency: 2
+  respect_robots: true
+
+fetch:
+  mode: http            # http | browser (requiere extra 'browser')
+
+start_urls:
+  - /listado
+
+pagination:
+  next_selector: "a.siguiente::attr(href)"
+  max_pages: 5
+
+list:
+  item_selector: "div.card"
+  detail_url: "a.titulo::attr(href)"     # opcional; quitar si no hay página de detalle
+  fields:
+    titulo: {{ selector: "a.titulo", type: str, required: true }}
+
+detail:
+  fields:
+    precio:   {{ selector: ".precio", type: money }}
+    fecha:    {{ selector: "time::attr(datetime)", type: date }}
+    telefono: {{ selector: ".telefono", type: phone }}
+
+key: [titulo]           # clave natural para no duplicar; vacío = URL de detalle
+
+export:
+  default: xlsx
+"""
+
+
+def _setup_logging(verbose: bool) -> None:
+    load_dotenv()
+    import os
+    level = "DEBUG" if verbose else os.getenv("LOG_LEVEL", "INFO")
+    logging.basicConfig(level=level, format="%(message)s", handlers=[RichHandler(console=console, show_path=False)])
+    logging.getLogger("httpx").setLevel("WARNING")
+
+
+def _print_report(rep: RunReport) -> None:
+    t = Table(title=f"Ejecución {rep.site}" + (" (dry-run)" if rep.dry_run else ""))
+    t.add_column("Métrica")
+    t.add_column("Valor", justify="right")
+    t.add_row("Páginas descargadas", str(rep.pages))
+    t.add_row("Items vistos", str(rep.items_seen))
+    t.add_row("Nuevos", str(rep.items_new))
+    t.add_row("Actualizados", str(rep.items_updated))
+    t.add_row("Sin cambios", str(rep.items_unchanged))
+    t.add_row("Errores", str(rep.errors), style="red" if rep.errors else None)
+    console.print(t)
+    if rep.empty_fields:
+        e = Table(title="Campos vacíos (revisar selectores)")
+        e.add_column("Campo")
+        e.add_column("Vacíos", justify="right")
+        e.add_column("% sobre vistos", justify="right")
+        for k, v in sorted(rep.empty_fields.items(), key=lambda kv: -kv[1]):
+            pct = 100 * v / max(rep.items_seen, 1)
+            e.add_row(k, str(v), f"{pct:.0f}%", style="yellow" if pct > 50 else None)
+        console.print(e)
+
+
+@app.callback()
+def _main(ctx: typer.Context, version: bool = typer.Option(False, "--version", help="Muestra la versión")):
+    if version:
+        console.print(f"motor-scraping {__version__}")
+        raise typer.Exit()
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit()
+
+
+@app.command()
+def run(site: Path = typer.Argument(..., help="Ruta al YAML del sitio"),
+        limit: int = typer.Option(None, help="Máximo de items a procesar"),
+        export: str = typer.Option(None, help="Exportar al terminar: csv|xlsx|json"),
+        verbose: bool = typer.Option(False, "-v")):
+    """Ejecuta el scraping y guarda en la base de datos."""
+    _setup_logging(verbose)
+    cfg = load_site(site)
+    repo = Repo()
+    rep = Engine(cfg, repo, limit=limit).run_sync()
+    _print_report(rep)
+    fmt = export or None
+    if fmt:
+        out = export_items(repo.items(cfg.name), fmt, cfg.name, cfg.export.path)
+        console.print(f"[green]Exportado:[/green] {out}")
+
+
+@app.command("dry-run")
+def dry_run(site: Path = typer.Argument(...),
+            limit: int = typer.Option(10, help="Items a probar"),
+            verbose: bool = typer.Option(False, "-v")):
+    """Prueba selectores sin escribir en la BBDD; muestra una muestra de registros."""
+    _setup_logging(verbose)
+    cfg = load_site(site)
+    rep = Engine(cfg, repo=None, dry_run=True, limit=limit).run_sync()
+    _print_report(rep)
+    if rep.sample:
+        console.rule("Muestra")
+        for i, row in enumerate(rep.sample, 1):
+            console.print(f"[bold]#{i}[/bold] {row}")
+
+
+@app.command()
+def export(site: Path = typer.Argument(...),
+           fmt: str = typer.Option(None, "--fmt", "-f", help="csv|xlsx|json (defecto: el del YAML)"),
+           out: Path = typer.Option(None, "--out", "-o")):
+    """Exporta los items almacenados de un sitio."""
+    _setup_logging(False)
+    cfg = load_site(site)
+    repo = Repo()
+    items = repo.items(cfg.name)
+    if not items:
+        console.print("[yellow]No hay items almacenados para este sitio.[/yellow]")
+        raise typer.Exit(1)
+    path = export_items(items, fmt or cfg.export.default, cfg.name, str(out) if out else cfg.export.path)
+    console.print(f"[green]{len(items)} items exportados a[/green] {path}")
+
+
+@app.command()
+def status(site: Path = typer.Argument(None, help="YAML del sitio (opcional: todos si se omite)")):
+    """Muestra las últimas ejecuciones."""
+    _setup_logging(False)
+    repo = Repo()
+    name = load_site(site).name if site else None
+    runs = repo.last_runs(name)
+    t = Table(title="Últimas ejecuciones")
+    for c in ("id", "site", "estado", "inicio", "págs", "nuevos", "actualiz.", "igual", "errores"):
+        t.add_column(c)
+    for r in runs:
+        t.add_row(str(r.id), r.site, r.status, f"{r.started_at:%Y-%m-%d %H:%M}", str(r.pages),
+                  str(r.items_new), str(r.items_updated), str(r.items_unchanged), str(r.errors))
+    console.print(t)
+    if name:
+        console.print(f"Items almacenados para [bold]{name}[/bold]: {repo.count_items(name)}")
+
+
+@app.command()
+def validate(site: Path = typer.Argument(...)):
+    """Valida la sintaxis del YAML sin ejecutar nada."""
+    cfg = load_site(site)
+    console.print(f"[green]OK[/green] {cfg.name}: {len(cfg.all_fields)} campos, key={cfg.key}, modo={cfg.fetch.mode}")
+
+
+@app.command("init-site")
+def init_site(name: str = typer.Argument(..., help="Nombre del sitio (sin espacios)"),
+              sites_dir: Path = typer.Option(Path("sites"))):
+    """Genera un YAML esqueleto en sites/<nombre>.yaml."""
+    sites_dir.mkdir(parents=True, exist_ok=True)
+    path = sites_dir / f"{name}.yaml"
+    if path.exists():
+        console.print(f"[red]Ya existe[/red] {path}")
+        raise typer.Exit(1)
+    path.write_text(SITE_TEMPLATE.format(name=name), encoding="utf-8")
+    console.print(f"[green]Creado[/green] {path}. Edita selectores y prueba con: scraper dry-run {path}")
+
+
+if __name__ == "__main__":
+    app()

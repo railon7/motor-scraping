@@ -1,0 +1,19 @@
+name: test-site
+base_url: http://127.0.0.1:PORT
+politeness: { delay_seconds: 0, max_concurrency: 4, respect_robots: true, max_retries: 1 }
+start_urls: ["/index.html"]
+pagination: { next_selector: "li.next a::attr(href)", max_pages: 5 }
+list:
+  item_selector: "div.quote"
+  detail_url: "span a::attr(href)"
+  fields:
+    texto:  { selector: "span.text", type: str, required: true }
+    autor:  { selector: "small.author", type: str, required: true }
+    tags:   { selector: "div.tags a.tag", type: list }
+    precio: { selector: "span.precio", type: money }
+detail:
+  fields:
+    nacimiento: { selector: "span.author-born-date", type: date }
+    lugar:      { selector: "span.author-born-location", type: str, regex: "^in\\s+(.*)$" }
+    telefono:   { selector: "p.tel", type: phone }
+key: [texto, autor]
