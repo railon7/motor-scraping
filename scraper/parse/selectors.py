@@ -5,6 +5,8 @@ Sintaxis del selector:
     "a.titulo::attr(href)"  -> atributo href
     "div.precio::text"      -> texto (explícito)
     "div.desc::html"        -> HTML interno
+    "jsonld:Product.name"   -> dato de schema.org en JSON-LD (ver parse/structured.py)
+    "meta:og:title"         -> contenido de una etiqueta <meta>
 """
 from __future__ import annotations
 
@@ -13,6 +15,8 @@ from dataclasses import dataclass
 from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser, Node
+
+from scraper.parse.structured import jsonld_values, meta_values
 
 _SUFFIX = re.compile(r"^(?P<css>.*?)(::(?P<kind>text|html|attr\((?P<attr>[^)]+)\)))?$")
 
@@ -51,7 +55,19 @@ def _select(root: Node | HTMLParser, css: str) -> list[Node]:
     return root.css(css)
 
 
+def _structured(root: Node | HTMLParser, sel: str) -> list[str] | None:
+    """Valores de un selector con prefijo jsonld:/meta:, o None si es un selector CSS normal."""
+    if sel.startswith("jsonld:"):
+        return jsonld_values(root, sel.removeprefix("jsonld:").strip())
+    if sel.startswith("meta:"):
+        return meta_values(root, sel.removeprefix("meta:").strip())
+    return None
+
+
 def extract_one(root: Node | HTMLParser, sel: str, base_url: str | None = None) -> str | None:
+    values = _structured(root, sel)
+    if values is not None:
+        return values[0] if values else None
     ps = parse_selector(sel)
     nodes = _select(root, ps.css)
     if not nodes:
@@ -60,6 +76,9 @@ def extract_one(root: Node | HTMLParser, sel: str, base_url: str | None = None) 
 
 
 def extract_all(root: Node | HTMLParser, sel: str, base_url: str | None = None) -> list[str]:
+    values = _structured(root, sel)
+    if values is not None:
+        return values
     ps = parse_selector(sel)
     out = []
     for n in _select(root, ps.css):
@@ -71,3 +90,10 @@ def extract_all(root: Node | HTMLParser, sel: str, base_url: str | None = None) 
 
 def parse_html(html: str) -> HTMLParser:
     return HTMLParser(html)
+
+
+def document_base(tree: HTMLParser, page_url: str) -> str:
+    """URL base para resolver enlaces relativos: <base href> si existe, si no la de la página."""
+    node = tree.css_first("base[href]")
+    href = node.attributes.get("href") if node else None
+    return urljoin(page_url, href) if href else page_url

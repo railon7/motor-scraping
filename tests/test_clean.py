@@ -25,7 +25,7 @@ def test_dates():
     assert clean_date("12/03/2024") == date(2024, 3, 12)
     assert clean_date("2024-03-12T10:00:00") == date(2024, 3, 12)
     assert clean_date("12 de marzo de 1980") == date(1980, 3, 12)
-    assert clean_date("ayer") is None
+    assert clean_date("sin fecha") is None
 
 
 def test_dates_in_context():
@@ -58,3 +58,18 @@ def test_phone_email_int():
     assert clean_phone("sin teléfono") is None
     assert clean_email("Contacto: Info@Ejemplo.ES ") == "info@ejemplo.es"
     assert clean_int("1.250 unidades") == 1250
+
+
+def test_relative_dates():
+    from scraper.pipeline.clean import relative_datetime
+
+    now = datetime(2026, 3, 31, 15, 45)
+    assert relative_datetime("hoy", now)[0] == datetime(2026, 3, 31)
+    assert relative_datetime("Publicado ayer", now)[0] == datetime(2026, 3, 30)
+    assert relative_datetime("anteayer", now)[0] == datetime(2026, 3, 29)
+    assert relative_datetime("hace 2 días", now)[0].date() == date(2026, 3, 29)
+    assert relative_datetime("hace 3 horas", now) == (datetime(2026, 3, 31, 12, 45), True)
+    assert relative_datetime("hace un mes", now)[0].date() == date(2026, 2, 28)  # 31 feb no existe
+    assert relative_datetime("2 weeks ago", now)[0].date() == date(2026, 3, 17)
+    assert relative_datetime("Hoyos de Pinares", now) is None
+    assert clean_date("hace 1 día") is not None

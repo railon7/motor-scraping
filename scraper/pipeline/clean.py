@@ -1,8 +1,9 @@
 """Normalizadores por tipo de campo. Cada uno recibe texto y devuelve un valor tipado o None."""
 from __future__ import annotations
 
+import calendar
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 _MONEY = re.compile(r"-?\d(?:[\d.,\s]*\d)?")
 _PHONE = re.compile(r"\+?\d[\d\s.\-()]{6,}\d")
@@ -14,6 +15,14 @@ _DATE_DMY = re.compile(r"\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4}|\d{2})\b")
 # Fechas con nombre de mes: "12 de marzo de 1980", "12 mar. 2024", "1 de septiembre, 2024", "March 14, 1879"
 _DATE_D_MONTH_Y = re.compile(r"\b(\d{1,2})(?:\s+de)?\s+([a-záéíóúñ]+)\.?,?(?:\s+de)?,?\s+(\d{4})\b")
 _DATE_MONTH_D_Y = re.compile(r"\b([a-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b")
+_REL_ES = re.compile(r"\bhace\s+(un|una|\d+)\s+(segundo|minuto|hora|d[ií]a|semana|mes|a[ñn]o)(?:s|es)?\b")
+_REL_EN = re.compile(r"\b(a|an|\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago\b")
+_REL_UNITS = {
+    "segundo": "seconds", "minuto": "minutes", "hora": "hours", "día": "days", "dia": "days",
+    "semana": "weeks", "mes": "months", "año": "years", "ano": "years",
+    "second": "seconds", "minute": "minutes", "hour": "hours", "day": "days",
+    "week": "weeks", "month": "months", "year": "years",
+}
 _TIME = re.compile(r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b")
 _MESES = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7,
@@ -103,7 +112,40 @@ def clean_date(v: str) -> date | None:
         return _safe_date(int(m.group(3)), _month(m.group(2)), int(m.group(1)))
     if m := _DATE_MONTH_D_Y.search(low):
         return _safe_date(int(m.group(3)), _month(m.group(1)), int(m.group(2)))
-    return None
+    rel = relative_datetime(s)
+    return rel[0].date() if rel else None
+
+
+def _minus_months(d: datetime, months: int) -> datetime:
+    y, m = divmod(d.year * 12 + d.month - 1 - months, 12)
+    day = min(d.day, calendar.monthrange(y, m + 1)[1])
+    return d.replace(year=y, month=m + 1, day=day)
+
+
+def relative_datetime(v: str, now: datetime | None = None) -> tuple[datetime, bool] | None:
+    """'hoy', 'ayer', 'hace 3 días', '2 hours ago'... -> (fecha, tiene_hora_precisa).
+
+    Se calcula contra `now` (por defecto, el momento de la extracción).
+    """
+    now = now or datetime.now()
+    low = clean_str(v).lower()
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if re.search(r"\banteayer\b", low):
+        return day - timedelta(days=2), False
+    if re.search(r"\b(ayer|yesterday)\b", low):
+        return day - timedelta(days=1), False
+    if re.search(r"\b(hoy|today)\b", low):
+        return day, False
+    m = _REL_ES.search(low) or _REL_EN.search(low)
+    if not m:
+        return None
+    qty = 1 if m.group(1) in ("un", "una", "a", "an") else int(m.group(1))
+    unit = _REL_UNITS[m.group(2)]
+    if unit == "months":
+        return _minus_months(now, qty), False
+    if unit == "years":
+        return _minus_months(now, 12 * qty), False
+    return now - timedelta(**{unit: qty}), unit in ("seconds", "minutes", "hours")
 
 
 def clean_datetime(v: str) -> datetime | None:
@@ -111,15 +153,19 @@ def clean_datetime(v: str) -> datetime | None:
     try:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
-        d = clean_date(s)
-        if not d:
-            return None
-        t = _TIME.search(s)
-        h, mi, sec = (int(t.group(1)), int(t.group(2)), int(t.group(3) or 0)) if t else (0, 0, 0)
-        try:
-            return datetime(d.year, d.month, d.day, h, mi, sec)
-        except ValueError:
-            return datetime(d.year, d.month, d.day)
+        pass
+    t = _TIME.search(s)
+    d = clean_date(s)
+    if not d:
+        return None
+    rel = relative_datetime(s)
+    if rel and rel[1]:  # "hace 3 horas": la hora ya es precisa
+        return rel[0].replace(microsecond=0)
+    h, mi, sec = (int(t.group(1)), int(t.group(2)), int(t.group(3) or 0)) if t else (0, 0, 0)
+    try:
+        return datetime(d.year, d.month, d.day, h, mi, sec)
+    except ValueError:
+        return datetime(d.year, d.month, d.day)
 
 
 def clean_phone(v: str) -> str | None:
