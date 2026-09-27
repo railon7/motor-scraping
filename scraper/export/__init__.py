@@ -17,6 +17,7 @@ def items_to_dataframe(items: list[Item]) -> pd.DataFrame:
         row["_url"] = it.source_url
         row["_first_seen"] = it.first_seen
         row["_last_seen"] = it.last_seen
+        row["_gone_at"] = it.gone_at  # vacío = sigue publicado
         rows.append(row)
     df = pd.DataFrame(rows)
     # listas -> texto separado por "; " para CSV/Excel

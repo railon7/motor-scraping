@@ -51,3 +51,9 @@ def site_yaml(site_server, tmp_path):
 @pytest.fixture
 def db_url(tmp_path):
     return f"sqlite:///{tmp_path / 'test.db'}"
+
+
+@pytest.fixture(autouse=True)
+def _cache_in_tmp(tmp_path, monkeypatch):
+    """La caché HTTP de los tests va a una carpeta temporal, nunca a data/cache del repo."""
+    monkeypatch.setenv("CACHE_DIR", str(tmp_path / "cache"))

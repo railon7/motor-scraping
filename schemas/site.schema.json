@@ -1,0 +1,415 @@
+{
+  "$defs": {
+    "CacheConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Guarda las respuestas en data/cache/<sitio>/. dry-run la usa siempre.",
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "ttl_hours": {
+          "default": 24,
+          "description": "Horas que una respuesta se considera fresca; después se revalida con ETag/Last-Modified.",
+          "title": "Ttl Hours",
+          "type": "number"
+        }
+      },
+      "title": "CacheConfig",
+      "type": "object"
+    },
+    "DetailConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "additionalProperties": {
+            "$ref": "#/$defs/FieldSpec"
+          },
+          "title": "Fields",
+          "type": "object"
+        },
+        "refresh_days": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Modo incremental: no vuelve a descargar el detalle de un item ya guardado si los campos del listado no cambiaron y se descargó hace menos de N días. Vacío = siempre se descarga.",
+          "title": "Refresh Days"
+        }
+      },
+      "title": "DetailConfig",
+      "type": "object"
+    },
+    "Expect": {
+      "additionalProperties": false,
+      "properties": {
+        "min_items": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Mínimo de items por ejecución completa; por debajo la ejecución queda 'degraded'.",
+          "title": "Min Items"
+        },
+        "fill_rate": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Proporción mínima (0-1) de items con el campo relleno, p. ej. {precio: 0.9}.",
+          "title": "Fill Rate",
+          "type": "object"
+        }
+      },
+      "title": "Expect",
+      "type": "object"
+    },
+    "ExportConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "enum": [
+            "csv",
+            "xlsx",
+            "json"
+          ],
+          "type": "string",
+          "default": "xlsx",
+          "title": "Default"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        }
+      },
+      "title": "ExportConfig",
+      "type": "object"
+    },
+    "FetchConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "http",
+          "enum": [
+            "http",
+            "browser"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "wait_for": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wait For"
+        }
+      },
+      "title": "FetchConfig",
+      "type": "object"
+    },
+    "FieldSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "selector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "CSS con sufijo ::text/::attr(x)/::html, o 'jsonld:Tipo.ruta', o 'meta:og:title'. Una lista prueba cada selector en orden y se queda con el primero que dé valor. Vacío = texto del elemento raíz.",
+          "title": "Selector"
+        },
+        "type": {
+          "default": "str",
+          "enum": [
+            "str",
+            "int",
+            "float",
+            "money",
+            "date",
+            "datetime",
+            "phone",
+            "email",
+            "url",
+            "list"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "default": {
+          "default": null,
+          "title": "Default"
+        },
+        "multiple": {
+          "default": false,
+          "title": "Multiple",
+          "type": "boolean"
+        },
+        "regex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Regex"
+        }
+      },
+      "title": "FieldSpec",
+      "type": "object"
+    },
+    "ListConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "item_selector": {
+          "title": "Item Selector",
+          "type": "string"
+        },
+        "detail_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail Url"
+        },
+        "fields": {
+          "additionalProperties": {
+            "$ref": "#/$defs/FieldSpec"
+          },
+          "title": "Fields",
+          "type": "object"
+        }
+      },
+      "required": [
+        "item_selector"
+      ],
+      "title": "ListConfig",
+      "type": "object"
+    },
+    "Pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "next_selector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Selector"
+        },
+        "url_template": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url Template"
+        },
+        "start_page": {
+          "default": 1,
+          "title": "Start Page",
+          "type": "integer"
+        },
+        "max_pages": {
+          "default": 10,
+          "title": "Max Pages",
+          "type": "integer"
+        }
+      },
+      "title": "Pagination",
+      "type": "object"
+    },
+    "Politeness": {
+      "additionalProperties": false,
+      "properties": {
+        "delay_seconds": {
+          "default": 2.0,
+          "description": "Pausa mínima entre peticiones al mismo dominio. Si robots.txt pide un Crawl-delay mayor, se usa ese.",
+          "title": "Delay Seconds",
+          "type": "number"
+        },
+        "max_concurrency": {
+          "default": 2,
+          "title": "Max Concurrency",
+          "type": "integer"
+        },
+        "respect_robots": {
+          "default": true,
+          "title": "Respect Robots",
+          "type": "boolean"
+        },
+        "max_retries": {
+          "default": 3,
+          "title": "Max Retries",
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "default": 20.0,
+          "title": "Timeout Seconds",
+          "type": "number"
+        },
+        "retry_status": {
+          "description": "Códigos HTTP temporales que se reintentan; el resto de 4xx son definitivos.",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Retry Status",
+          "type": "array"
+        },
+        "max_consecutive_errors": {
+          "default": 20,
+          "description": "Cortacircuitos: aborta la ejecución tras N errores de descarga seguidos (0 = desactivado).",
+          "title": "Max Consecutive Errors",
+          "type": "integer"
+        }
+      },
+      "title": "Politeness",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "base_url": {
+      "title": "Base Url",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "politeness": {
+      "$ref": "#/$defs/Politeness"
+    },
+    "fetch": {
+      "$ref": "#/$defs/FetchConfig"
+    },
+    "cache": {
+      "$ref": "#/$defs/CacheConfig"
+    },
+    "start_urls": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Start Urls",
+      "type": "array"
+    },
+    "pagination": {
+      "$ref": "#/$defs/Pagination"
+    },
+    "list": {
+      "$ref": "#/$defs/ListConfig"
+    },
+    "detail": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DetailConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "key": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Key",
+      "type": "array"
+    },
+    "track_removed": {
+      "default": false,
+      "description": "Marca como desaparecidos (gone_at) los items que dejan de verse en una ejecución completa y sana.",
+      "title": "Track Removed",
+      "type": "boolean"
+    },
+    "expect": {
+      "$ref": "#/$defs/Expect"
+    },
+    "export": {
+      "$ref": "#/$defs/ExportConfig"
+    }
+  },
+  "required": [
+    "name",
+    "base_url",
+    "start_urls",
+    "list"
+  ],
+  "title": "Motor Scraping · configuración de sitio",
+  "type": "object"
+}

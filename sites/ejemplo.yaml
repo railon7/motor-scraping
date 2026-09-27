@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../schemas/site.schema.json
 # Sitio de ejemplo: quotes.toscrape.com es un sandbox público pensado para practicar scraping.
 # Demuestra listado + paginación + página de detalle (autor).
 name: ejemplo-quotes
