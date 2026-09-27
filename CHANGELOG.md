@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0 — 2026-09-27
+
+Mejoras aplicadas a partir del análisis de 24 proyectos open source de scraping ([docs/conocimiento/](docs/conocimiento/README.md)).
+
+- **robots.txt conforme a RFC 9309**: parser propio con comodines `*` y `$` (el de la librería estándar los ignoraba), regla más específica, grupo por user-agent, `Crawl-delay` respetado, y robots.txt con error 5xx o inaccesible = no rastrear.
+- **Caché HTTP** en `data/cache/<sitio>/` con caducidad (`cache.ttl_hours`), revalidación ETag/Last-Modified (304) y `--offline`. `dry-run` la usa por defecto.
+- **Modo incremental** (`detail.refresh_days`): no se vuelve a descargar el detalle de un item si se descargó hace poco y los datos del listado no cambiaron.
+- **Items desaparecidos** (`track_removed`): columna `gone_at`, solo tras ejecuciones completas y sanas; se reactivan si reaparecen. `export --solo-activos`.
+- **Avisos de selectores rotos** (`expect.min_items`, `expect.fill_rate`): la ejecución queda `degraded` con el motivo en `status`.
+- **Cortacircuitos** (`politeness.max_consecutive_errors`, 20 por defecto): la ejecución queda `aborted`. Un 429 frena todo el dominio. Códigos reintentables configurables (`retry_status`, añade 408).
+- **Datos estructurados**: selectores `jsonld:Tipo.ruta` y `meta:nombre`; `selector` admite una lista de alternativas.
+- **Fechas relativas**: "hoy", "ayer", "anteayer", "hace N días/horas/semanas/meses", "N days ago".
+- **Enlaces** resueltos contra `<base href>`.
+- **Modo navegador**: ahora respeta robots.txt y `Crawl-delay`, usa el User-Agent configurado y la caché.
+- **Configuración estricta**: claves desconocidas rechazadas con sugerencia ("¿quisiste decir 'selector'?"); `scraper schema` genera el JSON Schema para VS Code.
+- **Corrección**: si falla la descarga de un detalle, el item ya no se guarda con datos parciales encima de los completos.
+- **Corrección**: el recuento de campos vacíos incluye campos que no llegaron a extraerse.
+- **Corrección**: todas las fechas de la BBDD en hora local (antes mezclaba UTC del servidor SQLite con hora local).
+- Migración automática de columnas nuevas en bases existentes.
+- Tests: de 21 a 47.
+
 ## 0.1.1 — 2026-09-27
 
 Revisión del motor (correcciones de fiabilidad y calidad de datos).

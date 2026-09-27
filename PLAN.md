@@ -113,6 +113,7 @@ motor-scraping/
 ## 7. Decisiones pendientes (a comentar)
 
 - **Piloto**: candidatos → subastas del BOE (paginación + detalle, datos públicos), directorio de empresas para prospección, o catálogo/precios de un proveedor. Elegir uno con valor real para no diseñar en el vacío.
+  - ⚠️ *Actualización 2026-09-27*: `subastas.boe.es` prohíbe todos los robots en su robots.txt y `www.boe.es` prohíbe `xml.php`. Si el piloto es el BOE, hacerlo por la **API de datos abiertos** (`/datosabiertos/api/boe/sumario/AAAAMMDD`, JSON) para el sumario y `txt.php` para el detalle (p. ej. anuncios de la sección V), o pedir autorización a la AEBOE. Requiere soporte de respuestas JSON en el motor. Ver [docs/conocimiento/aprendizajes.md](docs/conocimiento/aprendizajes.md).
 - **Selectores**: solo CSS (más simple) o CSS + XPath (más potente). Propuesta: CSS por defecto, XPath permitido con prefijo `xpath:`.
 - **Extracción con IA**: ¿incluir un extractor opcional por LLM para páginas sin estructura estable? Propuesta: fuera del alcance de F1–F4; hueco previsto en `parse/` para añadirlo después.
 - **Anti-bot**: límite claro → si un sitio bloquea con captchas o exige evasión, se descarta o se busca API oficial. No se integran servicios de proxies rotatorios de inicio.

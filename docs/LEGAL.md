@@ -14,6 +14,7 @@ Lista de comprobación antes de dar de alta un sitio. No es asesoramiento juríd
 ## Durante
 
 - Identifícate (`USER_AGENT` con contacto), respeta `robots.txt`, mantén `delay_seconds` y `max_concurrency` bajos, no evadas captchas ni bloqueos. Si el sitio bloquea, para y reconsidera.
+- `robots.txt` puede tener reglas con comodines (`/txt.php?*lang=ca`) y subdominios con políticas distintas: revísalo **en cada subdominio** que vayas a rastrear. Ejemplo real: `www.boe.es` permite casi todo, pero `subastas.boe.es` prohíbe todos los robots (`Disallow: /`).
 
 ## Registro por sitio
 
