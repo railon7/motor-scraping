@@ -108,10 +108,11 @@ class HttpFetcher:
         if self._client:
             await self._client.aclose()
 
-    async def fetch(self, url: str) -> FetchResult:
+    async def fetch(self, url: str, revalidate: bool = False) -> FetchResult:
+        """`revalidate`: no servir de caché aunque esté fresca (listados: pueden tener items nuevos)."""
         assert self._client, "Usar dentro de 'async with'"
         cached = self.cache.get(url) if self.cache else None
-        if cached and self.cache.is_fresh(cached):
+        if cached and self.cache.is_fresh(cached) and (not revalidate or self.cache.mode == "offline"):
             self.cache.hits += 1
             return FetchResult(url=cached.final_url, status=cached.status, html=cached.html, elapsed_ms=0, from_cache=True)
         if self.cache and self.cache.mode == "offline":

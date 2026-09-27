@@ -132,3 +132,22 @@ def test_old_database_is_migrated(tmp_path):
     cols = {r[1] for r in sqlite3.connect(db).execute("PRAGMA table_info(items)")}
     assert {"seen_run_id", "fetched_at", "gone_at"} <= cols
     assert repo.count_items("s") == 1
+
+
+def test_run_revalidates_listings_but_not_details(site_yaml, db_url):
+    cfg = load_site(site_yaml)
+    cfg.cache.enabled = True
+    repo = Repo(db_url)
+    Engine(cfg, repo).run_sync()
+    rep = Engine(cfg, repo).run_sync()
+    # detalles frescos: de caché sin petición; listados: petición condicional -> 304 -> también de caché
+    assert rep.pages == 4 and rep.pages_cached == 4
+
+
+def test_fill_rate_ignores_skipped_items():
+    from scraper.engine import RunReport
+
+    rep = RunReport(site="s", dry_run=False, items_seen=10, items_skipped=8)
+    rep.empty_fields = {"precio": 1}
+    assert rep.fill_rate("precio") == 0.5  # 1 vacío de 2 extraídos, no de 10 vistos
+    assert RunReport(site="s", dry_run=False, items_seen=5, items_skipped=5).fill_rate("precio") == 1.0

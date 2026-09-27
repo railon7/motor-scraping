@@ -114,7 +114,7 @@ def _print_report(rep: RunReport) -> None:
         e.add_column("Vacíos", justify="right")
         e.add_column("% sobre vistos", justify="right")
         for k, v in sorted(rep.empty_fields.items(), key=lambda kv: -kv[1]):
-            pct = 100 * v / max(rep.items_seen, 1)
+            pct = 100 * v / max(rep.items_extracted, 1)
             e.add_row(k, str(v), f"{pct:.0f}%", style="yellow" if pct > 50 else None)
         console.print(e)
 

@@ -50,10 +50,15 @@ class RunReport:
             if data.get(k) in (None, "", []):
                 self.empty_fields[k] = self.empty_fields.get(k, 0) + 1
 
+    @property
+    def items_extracted(self) -> int:
+        """Items cuyos campos se extrajeron en esta ejecución (los saltados por incremental no cuentan)."""
+        return self.items_seen - self.items_skipped
+
     def fill_rate(self, field_name: str) -> float:
-        if not self.items_seen:
-            return 0.0
-        return 1 - self.empty_fields.get(field_name, 0) / self.items_seen
+        if not self.items_extracted:
+            return 1.0
+        return 1 - self.empty_fields.get(field_name, 0) / self.items_extracted
 
 
 class Engine:
@@ -142,7 +147,7 @@ class Engine:
             out.append(f"solo {rep.items_seen} items (mínimo esperado {exp.min_items})")
         for name, minimum in exp.fill_rate.items():
             rate = rep.fill_rate(name)
-            if rep.items_seen and rate < minimum:
+            if rep.items_extracted and rate < minimum:
                 out.append(f"campo '{name}' relleno en el {rate:.0%} de los items (mínimo {minimum:.0%})")
         return out
 
@@ -167,7 +172,8 @@ class Engine:
         if self._abort:
             return None
         try:
-            res = await fetcher.fetch(url)
+            # En ejecuciones reales los listados se revalidan siempre (304 si no cambiaron)
+            res = await fetcher.fetch(url, revalidate=kind == "list" and not self.dry_run)
         except RobotsDisallowed as e:  # decisión nuestra, no fallo del sitio: no cuenta para el cortacircuitos
             self._error(url, "robots", str(e))
             return None
