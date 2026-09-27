@@ -2,7 +2,7 @@
 
 Motor de web scraping **genérico y clonable**: el núcleo no sabe nada del sitio objetivo; cada web se describe en un YAML (`sites/<nombre>.yaml`) con URLs de arranque, paginación, selectores y tipos de campo. Los datos se guardan en SQLite (Postgres/Supabase opcional) sin duplicados y se exportan a CSV / Excel / JSON.
 
-Estado: **v0.2.0** — núcleo HTTP (F1) y calidad de datos (F2) funcionales, con caché, modo incremental y avisos de selectores rotos. Plan en [PLAN.md](PLAN.md). Lo aprendido de 24 proyectos open source y la hoja de ruta, en [docs/conocimiento/](docs/conocimiento/README.md).
+Estado: **v0.3.0** — núcleo HTTP (F1) y calidad de datos (F2) funcionales, con caché, modo incremental, avisos de selectores rotos y APIs JSON. Piloto (F5): licitaciones del BOE vía su API de datos abiertos ([sites/boe-licitaciones.yaml](sites/boe-licitaciones.yaml)). Plan en [PLAN.md](PLAN.md). Lo aprendido de 24 proyectos open source y la hoja de ruta, en [docs/conocimiento/](docs/conocimiento/README.md).
 
 ## Arranque en 5 minutos
 
@@ -25,8 +25,8 @@ scraper status   sites/ejemplo.yaml
 | `scraper init-site <nombre>` | Crea `sites/<nombre>.yaml` con un esqueleto comentado |
 | `scraper validate <yaml>` | Comprueba la configuración (claves mal escritas dan error con sugerencia) |
 | `scraper schema` | Genera `schemas/site.schema.json` para autocompletar el YAML en VS Code |
-| `scraper dry-run <yaml> [--limit N] [--offline]` | Extrae N items sin tocar la BBDD (usa caché); muestra muestra y campos vacíos |
-| `scraper run <yaml> [--limit N] [--export csv\|xlsx\|json] [--cache\|--no-cache] [--offline]` | Ejecución real con upsert idempotente |
+| `scraper dry-run <yaml> [--limit N] [--offline] [--desde F --hasta F]` | Extrae N items sin tocar la BBDD (usa caché); muestra muestra y campos vacíos |
+| `scraper run <yaml> [--limit N] [--export csv\|xlsx\|json] [--cache\|--no-cache] [--offline] [--desde F --hasta F]` | Ejecución real con upsert idempotente |
 | `scraper export <yaml> [-f fmt] [-o fichero] [--solo-activos]` | Exporta lo almacenado |
 | `scraper status [<yaml>]` | Últimas ejecuciones, estado (`ok`/`degraded`/`aborted`…) y motivo |
 
@@ -35,7 +35,8 @@ scraper status   sites/ejemplo.yaml
 1. `scraper init-site mi-sitio` y edita `sites/mi-sitio.yaml`.
 2. Ajusta `item_selector` (bloque de cada registro en el listado) y los `fields`.
    Sintaxis de selectores: CSS + sufijo opcional `::text` (defecto), `::attr(href)`, `::html`; datos estructurados con
-   `jsonld:Product.offers.price` o `meta:og:title`; una lista de selectores prueba cada uno en orden.
+   `jsonld:Product.offers.price` o `meta:og:title`; pares etiqueta/valor con `label:Referencia`; APIs JSON con
+   `fetch.format: json` y `json:ruta`; una lista de selectores prueba cada uno en orden.
 3. Tipos disponibles: `str, int, float, money, date, datetime, phone, email, url, list`.
    `required: true` descarta el registro (y lo audita en `errors`) si el campo queda vacío.
 4. Define `key:` con los campos que identifican un registro (si no, se usa la URL de detalle).
@@ -78,7 +79,7 @@ scraper/
   config.py       # modelos Pydantic del YAML
   engine.py       # orquestador listado -> detalle -> pipeline -> storage
   fetch/          # http.py (httpx, rate-limit, reintentos), robots.py (RFC 9309), cache.py, browser.py (Playwright)
-  parse/          # selectors.py (CSS + sufijos), structured.py (JSON-LD, meta), pagination.py
+  parse/          # selectors.py (CSS + sufijos), structured.py (JSON-LD, meta, label), jsonsel.py (APIs JSON), pagination.py
   pipeline/       # clean.py (tipos), extract.py, dedupe.py (clave natural + hash)
   storage/        # models.py (SQLAlchemy), repo.py (upsert, runs)
   export/         # csv / xlsx / json

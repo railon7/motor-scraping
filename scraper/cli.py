@@ -11,7 +11,7 @@ from rich.logging import RichHandler
 from rich.table import Table
 
 from scraper import __version__
-from scraper.config import ConfigError, json_schema, load_site
+from scraper.config import ConfigError, DatesConfig, json_schema, load_site
 from scraper.engine import Engine, RunReport
 from scraper.export import export_items
 from scraper.storage.repo import Repo
@@ -82,6 +82,22 @@ def _cache_mode(cache: bool | None, offline: bool):
     return "on" if cache else "off"
 
 
+def _dates(cfg, desde: str | None, hasta: str | None):
+    """Rango de fechas del YAML con --desde/--hasta aplicados encima."""
+    if desde is None and hasta is None:
+        return None
+    base = cfg.dates or DatesConfig()
+    try:
+        return DatesConfig(
+            start=base.start if desde is None else (int(desde) if desde.lstrip("-").isdigit() else desde),
+            end=base.end if hasta is None else (int(hasta) if hasta.lstrip("-").isdigit() else hasta),
+            skip_weekdays=base.skip_weekdays,
+        )
+    except ValueError as e:
+        console.print(f"[red]Fecha no válida en --desde/--hasta:[/red] {e}")
+        raise typer.Exit(2) from None
+
+
 def _setup_logging(verbose: bool) -> None:
     load_dotenv()
     import os
@@ -97,6 +113,8 @@ def _print_report(rep: RunReport) -> None:
     t.add_row("Estado", rep.status, style=None if rep.status in ("ok", "dry-run") else "red")
     t.add_row("Páginas", f"{rep.pages} ({rep.pages_cached} de caché)" if rep.pages_cached else str(rep.pages))
     t.add_row("Items vistos", str(rep.items_seen))
+    if rep.items_filtered:
+        t.add_row("Descartados por filtro", str(rep.items_filtered))
     t.add_row("Nuevos", str(rep.items_new))
     t.add_row("Actualizados", str(rep.items_updated))
     t.add_row("Sin cambios", str(rep.items_unchanged))
@@ -135,12 +153,15 @@ def run(site: Path = typer.Argument(..., help="Ruta al YAML del sitio"),
         export: str = typer.Option(None, help="Exportar al terminar: csv|xlsx|json"),
         cache: bool = typer.Option(None, "--cache/--no-cache", help="Usar la caché HTTP (por defecto, lo que diga el YAML)"),
         offline: bool = typer.Option(False, "--offline", help="Solo caché, sin ninguna petición a la web"),
+        desde: str = typer.Option(None, "--desde", help="Primer día para URLs con {date}: AAAA-MM-DD o días relativos (-7)"),
+        hasta: str = typer.Option(None, "--hasta", help="Último día (incluido): AAAA-MM-DD o días relativos (0 = hoy)"),
         verbose: bool = typer.Option(False, "-v")):
     """Ejecuta el scraping y guarda en la base de datos."""
     _setup_logging(verbose)
     cfg = _load(site)
     repo = Repo()
-    rep = Engine(cfg, repo, limit=limit, cache_mode=_cache_mode(cache, offline)).run_sync()
+    rep = Engine(cfg, repo, limit=limit, cache_mode=_cache_mode(cache, offline),
+                 dates=_dates(cfg, desde, hasta)).run_sync()
     _print_report(rep)
     fmt = export or None
     if fmt:
@@ -153,16 +174,20 @@ def dry_run(site: Path = typer.Argument(...),
             limit: int = typer.Option(10, help="Items a probar"),
             cache: bool = typer.Option(True, "--cache/--no-cache", help="Reutilizar páginas ya descargadas (por defecto sí)"),
             offline: bool = typer.Option(False, "--offline", help="Solo caché, sin ninguna petición a la web"),
+            desde: str = typer.Option(None, "--desde", help="Primer día para URLs con {date}: AAAA-MM-DD o días relativos (-7)"),
+            hasta: str = typer.Option(None, "--hasta", help="Último día (incluido): AAAA-MM-DD o días relativos (0 = hoy)"),
             verbose: bool = typer.Option(False, "-v")):
     """Prueba selectores sin escribir en la BBDD; muestra una muestra de registros."""
     _setup_logging(verbose)
     cfg = _load(site)
-    rep = Engine(cfg, repo=None, dry_run=True, limit=limit, cache_mode=_cache_mode(cache, offline)).run_sync()
+    rep = Engine(cfg, repo=None, dry_run=True, limit=limit, cache_mode=_cache_mode(cache, offline),
+                 dates=_dates(cfg, desde, hasta)).run_sync()
     _print_report(rep)
     if rep.sample:
         console.rule("Muestra")
         for i, row in enumerate(rep.sample, 1):
-            console.print(f"[bold]#{i}[/bold] {row}")
+            short = {k: (v[:120] + f"… ({len(v)} car.)" if isinstance(v, str) and len(v) > 120 else v) for k, v in row.items()}
+            console.print(f"[bold]#{i}[/bold] {short}")
 
 
 @app.command()

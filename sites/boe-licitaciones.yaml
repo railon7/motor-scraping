@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../schemas/site.schema.json
+# Piloto F5: anuncios de licitación del BOE (sección V-A, Contratación del Sector Público).
+#
+# Fuente conforme a robots.txt:
+#   - Listado: API de datos abiertos del BOE, sumario diario en JSON
+#     https://www.boe.es/datosabiertos/api/boe/sumario/AAAAMMDD  (404 los días sin BOE, p. ej. domingos)
+#   - Detalle: ficha HTML txt.php (permitida; xml.php está prohibido en robots.txt)
+#   subastas.boe.es NO se usa: su robots.txt prohíbe todos los robots.
+#
+# Uso:
+#   scraper dry-run sites/boe-licitaciones.yaml --limit 5
+#   scraper run sites/boe-licitaciones.yaml --export xlsx               # últimos 7 días
+#   scraper run sites/boe-licitaciones.yaml --desde 2026-09-01 --hasta 2026-09-26
+#
+# Ampliar a la sección V-B (otros anuncios oficiales, incluye subastas notariales y de la AEAT)
+# cambiando include.seccion a "^5[AB]$". OJO: la V-B contiene notificaciones con datos personales;
+# antes, documentar base jurídica y minimización en docs/LEGAL.md.
+name: boe-licitaciones
+description: Licitaciones públicas publicadas en la sección V-A del BOE (sumario diario vía API de datos abiertos)
+base_url: https://www.boe.es
+
+politeness:
+  delay_seconds: 2
+  max_concurrency: 1
+  respect_robots: true
+
+fetch:
+  format: json
+  headers:
+    Accept: application/json        # la API devuelve XML por defecto; el detalle txt.php lo ignora
+
+dates:
+  start: -7                         # última semana; en ejecución diaria basta con -3 (cubre fines de semana)
+  end: 0
+  skip_weekdays: [6]                # el BOE no se publica en domingo
+
+start_urls:
+  - "/datosabiertos/api/boe/sumario/{date:%Y%m%d}"
+
+cache:
+  enabled: true
+  ttl_hours: 720                    # sumarios y anuncios publicados no cambian
+
+list:
+  item_selector: "..item"           # todos los items, cuelguen o no de un epígrafe
+  detail_url: "json:url_html"
+  fields:
+    identificador:     { selector: "json:identificador", required: true }
+    titulo:            { selector: "json:titulo", required: true }
+    seccion:           { selector: "json:@seccion.codigo" }
+    departamento:      { selector: "json:@departamento.nombre" }
+    fecha_publicacion: { selector: "json:$.data.sumario.metadatos.fecha_publicacion", type: date }
+    numero_boe:        { selector: "json:@diario.numero", type: int }
+    url_html:          { selector: "json:url_html", type: url }
+    url_pdf:           { selector: "json:url_pdf.texto", type: url }
+    pagina:            { selector: "json:url_pdf.pagina_inicial", type: int }
+  include:
+    seccion: "^5A$"                 # solo Contratación del Sector Público
+
+detail:
+  refresh_days: 365                 # un anuncio publicado no cambia: no se vuelve a descargar
+  fields:
+    referencia:        { selector: "label:Referencia", required: true }
+    modalidad:         { selector: "label:Modalidad" }      # Licitación, Formalización, Anulación...
+    tipo:              { selector: "label:Tipo" }           # Servicios, Suministros, Obras...
+    procedimiento:     { selector: "label:Procedimiento" }
+    ambito:            { selector: "label:Ámbito geográfico" }
+    cpv:               { selector: "label:Materias (CPV)" }
+    observaciones:     { selector: "label:Observaciones" }
+    texto:             { selector: "#textoxslt" }           # cuerpo completo del anuncio
+
+key: [identificador]
+track_removed: false                # el BOE no retira anuncios: no tiene sentido marcar desaparecidos
+
+expect:
+  min_items: 10                     # una semana normal trae cientos; menos de 10 indica que algo cambió
+  fill_rate: { referencia: 0.95, tipo: 0.5 }
+
+export:
+  default: xlsx

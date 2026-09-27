@@ -21,3 +21,6 @@ Lista de comprobación antes de dar de alta un sitio. No es asesoramiento juríd
 | Sitio | Datos extraídos | Datos personales | Base jurídica / finalidad | Conservación | Responsable | Fecha |
 |---|---|---|---|---|---|---|
 | ejemplo-quotes | citas, autores (sandbox público) | no | — | — | — | 2026-09-26 |
+| boe-licitaciones | anuncios de licitación de la sección V-A del BOE (órgano, objeto, tipo, CPV, texto) vía API de datos abiertos + `txt.php` | residual (nombres de firmantes y contactos institucionales dentro del texto) | Información pública del BOE, reutilizable citando la fuente (condiciones de reutilización de la AEBOE); finalidad: detección de oportunidades de contratación | Mientras sea útil comercialmente; revisar anualmente | Tazuke | 2026-09-27 |
+
+Notas BOE: `subastas.boe.es` prohíbe todos los robots (no usar); `www.boe.es/robots.txt` prohíbe `xml.php` y fichas concretas de `txt.php` (retiradas), que el motor respeta. Ampliar a la sección V-B implica notificaciones con datos personales de particulares: requiere documentar base jurídica y minimizar campos antes de activarlo.

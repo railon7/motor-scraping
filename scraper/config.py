@@ -6,6 +6,8 @@ y los errores se devuelven en castellano con la ruta del campo y una sugerencia.
 from __future__ import annotations
 
 import difflib
+import re
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal, get_args
 
@@ -37,6 +39,9 @@ class CacheConfig(_Strict):
 
 class FetchConfig(_Strict):
     mode: Literal["http", "browser"] = "http"
+    format: Literal["html", "json"] = Field(
+        "html", description="json: el listado es una respuesta de API; list.item_selector es una ruta JSON "
+                            "(p. ej. '..item') y los campos usan selectores 'json:ruta'. El detalle puede seguir siendo HTML.")
     headers: dict[str, str] = Field(default_factory=dict)
     # Solo modo browser (F3): selector a esperar antes de leer el HTML
     wait_for: str | None = None
@@ -48,6 +53,24 @@ class Pagination(_Strict):
     url_template: str | None = None
     start_page: int = 1
     max_pages: int = 10
+
+
+class DatesConfig(_Strict):
+    """Rango de fechas para URLs de arranque con {date:%Y%m%d} (diarios oficiales, APIs por día)."""
+    start: int | date = Field(-7, description="Primer día: entero = días respecto a hoy (-7 = hace una semana) o fecha AAAA-MM-DD.")
+    end: int | date = Field(0, description="Último día (incluido): entero relativo a hoy o fecha AAAA-MM-DD.")
+    skip_weekdays: list[int] = Field(default_factory=list, description="Días de la semana que no se piden (0 = lunes ... 6 = domingo).")
+
+    def days(self, today: date | None = None) -> list[date]:
+        today = today or date.today()
+        first = today + timedelta(days=self.start) if isinstance(self.start, int) else self.start
+        last = today + timedelta(days=self.end) if isinstance(self.end, int) else self.end
+        out, d = [], first
+        while d <= last:
+            if d.weekday() not in self.skip_weekdays:
+                out.append(d)
+            d += timedelta(days=1)
+        return out
 
 
 class FieldSpec(_Strict):
@@ -75,6 +98,8 @@ class ListConfig(_Strict):
     detail_url: str | None = None
     # Campos que se extraen del propio bloque del listado (relativo a item_selector)
     fields: dict[str, FieldSpec] = Field(default_factory=dict)
+    include: dict[str, str] = Field(default_factory=dict, description="Solo se procesan los items cuyos campos de listado casan con todas estas regex, p. ej. {seccion: '^5A$'}.")
+    exclude: dict[str, str] = Field(default_factory=dict, description="Se descartan los items cuyo campo case con alguna de estas regex.")
 
 
 class DetailConfig(_Strict):
@@ -102,7 +127,8 @@ class SiteConfig(_Strict):
     politeness: Politeness = Field(default_factory=Politeness)
     fetch: FetchConfig = Field(default_factory=FetchConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
-    start_urls: list[str]
+    start_urls: list[str] = Field(description="URLs de arranque (relativas a base_url). Con {date:%Y%m%d} se genera una por día del rango `dates`.")
+    dates: DatesConfig | None = None
     pagination: Pagination = Field(default_factory=Pagination)
     list: ListConfig
     detail: DetailConfig | None = None
@@ -130,6 +156,30 @@ class SiteConfig(_Strict):
         unknown = [k for k in self.expect.fill_rate if k not in self.all_fields]
         if unknown:
             raise ConfigError(f"Campos de 'expect.fill_rate' no definidos en list/detail: {unknown}")
+        filtered = [k for k in (*self.list.include, *self.list.exclude) if k not in self.list.fields]
+        if filtered:
+            raise ConfigError(f"list.include/exclude solo pueden usar campos de list.fields: {filtered}")
+        for rx in (*self.list.include.values(), *self.list.exclude.values()):
+            try:
+                re.compile(rx)
+            except re.error as e:
+                raise ConfigError(f"Regex no válida en list.include/exclude {rx!r}: {e}") from None
+        uses_dates = any("{date" in u for u in self.start_urls)
+        if uses_dates and self.dates is None:
+            raise ConfigError("start_urls usa {date:...} pero falta el bloque 'dates' (p. ej. dates: {start: -7, end: 0})")
+        if self.fetch.format == "json" and self.fetch.mode == "browser":
+            raise ConfigError("fetch.format: json no tiene sentido con fetch.mode: browser")
+
+    def expanded_start_urls(self, dates_override: DatesConfig | None = None) -> list[tuple[str, bool]]:
+        """(url, es_de_fecha). Las URLs con {date:...} se generan para cada día del rango."""
+        out = []
+        dates = dates_override or self.dates
+        for u in self.start_urls:
+            if "{date" in u and dates is not None:
+                out += [(u.format(date=d), True) for d in dates.days()]
+            else:
+                out.append((u, False))
+        return out
 
 
 class ConfigError(ValueError):

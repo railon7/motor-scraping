@@ -133,3 +133,27 @@ def meta_values(root: Node | HTMLParser, name: str) -> list[str]:
             if v:
                 out.append(v.strip())
     return out
+
+
+def _norm_label(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip().rstrip(":").strip().lower()
+
+
+def label_values(root: Node | HTMLParser, label: str) -> list[str]:
+    """Valor asociado a una etiqueta en pares <dt>/<dd> o <th>/<td> (fichas de la Administración, tablas).
+
+    `label:Referencia` -> texto del <dd> que sigue a <dt>Referencia:</dt>. No distingue mayúsculas ni ':' final.
+    """
+    wanted = _norm_label(label)
+    out = []
+    for n in root.css("dt, th"):
+        if _norm_label(n.text(separator=" ")) != wanted:
+            continue
+        sib = n.next
+        while sib is not None and sib.tag in ("-text", "-comment", "_text", "_comment"):
+            sib = sib.next
+        if sib is not None and sib.tag in ("dd", "td"):
+            v = sib.text(separator=" ", strip=True)
+            if v:
+                out.append(v)
+    return out

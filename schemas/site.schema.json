@@ -19,6 +19,50 @@
       "title": "CacheConfig",
       "type": "object"
     },
+    "DatesConfig": {
+      "additionalProperties": false,
+      "description": "Rango de fechas para URLs de arranque con {date:%Y%m%d} (diarios oficiales, APIs por día).",
+      "properties": {
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "format": "date",
+              "type": "string"
+            }
+          ],
+          "default": -7,
+          "description": "Primer día: entero = días respecto a hoy (-7 = hace una semana) o fecha AAAA-MM-DD.",
+          "title": "Start"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "format": "date",
+              "type": "string"
+            }
+          ],
+          "default": 0,
+          "description": "Último día (incluido): entero relativo a hoy o fecha AAAA-MM-DD.",
+          "title": "End"
+        },
+        "skip_weekdays": {
+          "description": "Días de la semana que no se piden (0 = lunes ... 6 = domingo).",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Skip Weekdays",
+          "type": "array"
+        }
+      },
+      "title": "DatesConfig",
+      "type": "object"
+    },
     "DetailConfig": {
       "additionalProperties": false,
       "properties": {
@@ -113,6 +157,16 @@
             "browser"
           ],
           "title": "Mode",
+          "type": "string"
+        },
+        "format": {
+          "default": "html",
+          "description": "json: el listado es una respuesta de API; list.item_selector es una ruta JSON (p. ej. '..item') y los campos usan selectores 'json:ruta'. El detalle puede seguir siendo HTML.",
+          "enum": [
+            "html",
+            "json"
+          ],
+          "title": "Format",
           "type": "string"
         },
         "headers": {
@@ -231,6 +285,22 @@
             "$ref": "#/$defs/FieldSpec"
           },
           "title": "Fields",
+          "type": "object"
+        },
+        "include": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Solo se procesan los items cuyos campos de listado casan con todas estas regex, p. ej. {seccion: '^5A$'}.",
+          "title": "Include",
+          "type": "object"
+        },
+        "exclude": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Se descartan los items cuyo campo case con alguna de estas regex.",
+          "title": "Exclude",
           "type": "object"
         }
       },
@@ -361,11 +431,23 @@
       "$ref": "#/$defs/CacheConfig"
     },
     "start_urls": {
+      "description": "URLs de arranque (relativas a base_url). Con {date:%Y%m%d} se genera una por día del rango `dates`.",
       "items": {
         "type": "string"
       },
       "title": "Start Urls",
       "type": "array"
+    },
+    "dates": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DatesConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "pagination": {
       "$ref": "#/$defs/Pagination"

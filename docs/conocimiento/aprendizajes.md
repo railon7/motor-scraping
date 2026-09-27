@@ -47,8 +47,9 @@ Resultado medido contra quotes.toscrape.com (20 citas, 2 páginas): primera ejec
 
 | Mejora | Por qué | Origen | Esfuerzo |
 |---|---|---|---|
-| Respuestas JSON/XML: `fetch.format: json`, `items_path` y rutas tipo JSONPath para campos | Necesario para el piloto BOE vía API y para muchas webs que cargan datos por API | Aneiang.Pa, BOE datosabiertos | M |
-| Semillas por rango de fechas (`dates.template`, `run --since/--until`, `--backfill 31d`) | Diarios oficiales: una URL por día; ejecución diaria + barrido mensual | querido-diario, memorious | M |
+| ~~Respuestas JSON (`fetch.format: json`, rutas `json:`)~~ | ✅ Hecho en v0.3.0 (XML pendiente) | Aneiang.Pa, BOE datosabiertos | M |
+| ~~Semillas por rango de fechas (`dates`, `--desde/--hasta`)~~ | ✅ Hecho en v0.3.0 | querido-diario, memorious | M |
+| ~~Filtros declarativos antes del detalle~~ | ✅ Hecho en v0.3.0 (`list.include/exclude`) | JobFunnel, Aneiang.Pa | S |
 | `transform:` encadenado por campo (strip, replace, regex, split, map, `call: modulo:funcion`) | Hoy solo hay `regex` + tipo; los casos reales piden 2–3 pasos | MagicBox, memorious, Aneiang.Pa | M |
 | Tests por sitio con HTML guardado + `expected.json` (`scraper test`) | Detectar selectores rotos sin salir a internet; requisito de F4 | recipe-scrapers, MagicBox | S-M |
 | Reanudar ejecuciones (`run --resume`) con cola en BD | Ejecuciones largas cortadas no empiezan de cero | crawlee, exoskeleton, Scrapy JOBDIR | L |

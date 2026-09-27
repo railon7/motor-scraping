@@ -1,0 +1,16 @@
+{"status": {"code": "200", "text": "ok"},
+ "data": {"sumario": {
+   "metadatos": {"publicacion": "BOE", "fecha_publicacion": "20260925"},
+   "diario": [{"numero": "237", "seccion": [
+     {"codigo": "1", "nombre": "I. Disposiciones generales", "departamento": [
+       {"codigo": "1220", "nombre": "CORTES GENERALES", "epigrafe": [
+         {"nombre": "Medidas urgentes", "item": {"identificador": "BOE-A-1", "titulo": "Resolución A1", "url_html": "/diario/A-1.html"}}]}]},
+     {"codigo": "5A", "nombre": "V. Anuncios. - A. Contratación del Sector Público", "departamento": [
+       {"codigo": "9585", "nombre": "MINISTERIO DE LA PRESIDENCIA", "item": [
+         {"identificador": "BOE-B-1", "titulo": "Anuncio de licitación: servicios de software", "url_html": "/diario/B-1.html", "url_pdf": {"texto": "/pdfs/B-1.pdf", "pagina_inicial": "50195"}},
+         {"identificador": "BOE-B-2", "titulo": "Anuncio de formalización: suministro", "url_html": "/diario/B-2.html", "url_pdf": {"texto": "/pdfs/B-2.pdf", "pagina_inicial": "50196"}}]},
+       {"codigo": "7723", "nombre": "AYUNTAMIENTO DE SEVILLA", "item":
+         {"identificador": "BOE-B-3", "titulo": "Anuncio de licitación: obras", "url_html": "/diario/B-3.html", "url_pdf": {"texto": "/pdfs/B-3.pdf", "pagina_inicial": "50200"}}}]},
+     {"codigo": "5B", "nombre": "V. Anuncios. - B. Otros anuncios oficiales", "departamento": {
+       "codigo": "1", "nombre": "OTROS ENTES", "item": {"identificador": "BOE-B-4", "titulo": "Anuncio de subasta notarial", "url_html": "/diario/B-4.html"}}}
+   ]}]}}}

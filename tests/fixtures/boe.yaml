@@ -1,0 +1,25 @@
+name: test-boe
+base_url: http://127.0.0.1:PORT
+politeness: { delay_seconds: 0, max_concurrency: 2, respect_robots: true, max_retries: 1 }
+fetch: { format: json }
+dates: { start: 2026-09-24, end: 2026-09-26 }     # el 24 no existe (404 = sin publicación)
+start_urls: ["/api/sumario/{date:%Y%m%d}.json"]
+list:
+  item_selector: "..item"
+  detail_url: "json:url_html"
+  fields:
+    identificador: { selector: "json:identificador", required: true }
+    titulo:        { selector: "json:titulo", required: true }
+    seccion:       { selector: "json:@seccion.codigo" }
+    departamento:  { selector: "json:@departamento.nombre" }
+    fecha:         { selector: "json:$.data.sumario.metadatos.fecha_publicacion", type: date }
+    numero:        { selector: "json:@diario.numero", type: int }
+    url_pdf:       { selector: "json:url_pdf.texto", type: url }
+  include: { seccion: "^5A$" }
+  exclude: { titulo: "(?i)formalizaci" }
+detail:
+  fields:
+    referencia: { selector: "label:Referencia", required: true }
+    tipo:       { selector: "label:Tipo" }
+    texto:      { selector: "#textoxslt" }
+key: [identificador]

@@ -7,6 +7,8 @@ Sintaxis del selector:
     "div.desc::html"        -> HTML interno
     "jsonld:Product.name"   -> dato de schema.org en JSON-LD (ver parse/structured.py)
     "meta:og:title"         -> contenido de una etiqueta <meta>
+    "label:Referencia"      -> valor de un par <dt>/<dd> o <th>/<td> por su etiqueta
+    "json:@seccion.nombre"  -> ruta en una respuesta JSON (ver parse/jsonsel.py)
 """
 from __future__ import annotations
 
@@ -16,7 +18,8 @@ from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser, Node
 
-from scraper.parse.structured import jsonld_values, meta_values
+from scraper.parse.jsonsel import JsonNode, json_values
+from scraper.parse.structured import jsonld_values, label_values, meta_values
 
 _SUFFIX = re.compile(r"^(?P<css>.*?)(::(?P<kind>text|html|attr\((?P<attr>[^)]+)\)))?$")
 
@@ -61,6 +64,14 @@ def _structured(root: Node | HTMLParser, sel: str) -> list[str] | None:
         return jsonld_values(root, sel.removeprefix("jsonld:").strip())
     if sel.startswith("meta:"):
         return meta_values(root, sel.removeprefix("meta:").strip())
+    if sel.startswith("label:"):
+        return label_values(root, sel.removeprefix("label:").strip())
+    if sel.startswith("json:"):
+        if not isinstance(root, JsonNode):
+            raise ValueError(f"'{sel}': los selectores json: solo sirven con fetch.format: json")
+        return json_values(root, sel.removeprefix("json:").strip())
+    if isinstance(root, JsonNode):
+        raise ValueError(f"'{sel}': con fetch.format: json los campos usan selectores 'json:ruta'")
     return None
 
 

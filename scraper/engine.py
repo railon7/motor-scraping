@@ -4,14 +4,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urljoin
 
-from scraper.config import SiteConfig
+from scraper.config import DatesConfig, SiteConfig
 from scraper.fetch.cache import CacheMode, DiskCache
 from scraper.fetch.http import HttpFetcher, RobotsDisallowed
+from scraper.parse.jsonsel import parse_json, select_items
 from scraper.parse.pagination import next_page_url
 from scraper.parse.selectors import document_base, extract_one, parse_html
 from scraper.pipeline.dedupe import content_hash, natural_key, to_json
@@ -39,6 +41,7 @@ class RunReport:
     items_skipped: int = 0   # modo incremental: detalle no descargado porque no hacía falta
     items_gone: int = 0      # track_removed: dejaron de verse en esta ejecución
     items_invalid: int = 0   # descartados por campos obligatorios vacíos
+    items_filtered: int = 0  # descartados por list.include / list.exclude (no cuentan como vistos)
     errors: int = 0
     warnings: list[str] = field(default_factory=list)  # incumplimientos de `expect` o motivo de aborto
     empty_fields: dict[str, int] = field(default_factory=dict)
@@ -63,8 +66,11 @@ class RunReport:
 
 class Engine:
     def __init__(self, cfg: SiteConfig, repo: Repo | None, dry_run: bool = False, limit: int | None = None,
-                 cache_mode: CacheMode | None = None):
+                 cache_mode: CacheMode | None = None, dates: DatesConfig | None = None):
         self.cfg = cfg
+        self.dates = dates  # sustituye a cfg.dates (CLI --desde/--hasta)
+        self._include = {k: re.compile(v) for k, v in cfg.list.include.items()}
+        self._exclude = {k: re.compile(v) for k, v in cfg.list.exclude.items()}
         self.repo = repo
         self.dry_run = dry_run
         self.limit = limit  # máximo de items a procesar (útil en dry-run)
@@ -97,8 +103,8 @@ class Engine:
         status = "interrupted"  # si sale por Ctrl+C / cancelación no queda como "ok"
         try:
             async with self._make_fetcher() as fetcher:
-                for start in self.cfg.start_urls:
-                    await self._crawl_listing(fetcher, urljoin(self.cfg.base_url + "/", start))
+                for start, by_date in self.cfg.expanded_start_urls(self.dates):
+                    await self._crawl_listing(fetcher, urljoin(self.cfg.base_url + "/", start), by_date)
                     if self._reached_limit() or self._abort:
                         break
             status = self._final_status()
@@ -194,7 +200,8 @@ class Engine:
         self._consecutive_errors = 0
         return res
 
-    async def _crawl_listing(self, fetcher, url: str) -> None:
+    async def _crawl_listing(self, fetcher, url: str, by_date: bool = False) -> None:
+        """`by_date`: URL generada para un día; un 404 o un día sin items es normal (no hubo publicación)."""
         page_no = 0
         seen_urls: set[str] = set()
         while url and url not in seen_urls and not self._abort:
@@ -203,16 +210,19 @@ class Engine:
             log.info("[%s] listado p%d %s", self.cfg.name, page_no, url)
             # Pasada la primera página, un 404 es la forma habitual de decir "no hay más"
             errors_before = self.report.errors
-            res = await self._fetch_page(fetcher, url, "list", not_found_ok=page_no > 1)
+            res = await self._fetch_page(fetcher, url, "list", not_found_ok=page_no > 1 or by_date)
             if res is None:
                 if self.report.errors > errors_before:  # falló (no es un 404 de fin de listado)
                     self._incomplete = True
                 return
-            tree = parse_html(res.html)
-            page_base = document_base(tree, res.url)
-            nodes = tree.css(self.cfg.list.item_selector)
+            try:
+                tree, page_base, nodes = self._parse_listing(res)
+            except ValueError as e:
+                self._incomplete = True
+                self._error(url, "parse", f"respuesta no válida: {e}")
+                return
             if not nodes:
-                if page_no > 1:  # página vacía tras la primera: fin normal de la paginación
+                if page_no > 1 or by_date:  # página vacía tras la primera (o día sin items): fin normal
                     log.info("[%s] sin items en p%d, fin del listado", self.cfg.name, page_no)
                 else:
                     self._incomplete = True
@@ -222,15 +232,35 @@ class Engine:
             # Procesamos items de la página con concurrencia limitada por el fetcher
             tasks = []
             for node in nodes:
+                # Los campos del listado se extraen aquí para filtrar antes de contar (y de aplicar --limit)
+                data, errs = extract_fields(node, self.cfg.list.fields, page_base)
+                if not self._passes_filters(data):
+                    self.report.items_filtered += 1
+                    continue
                 if self._reached_limit():
                     break
                 self.report.items_seen += 1
-                tasks.append(self._process_item(fetcher, node, page_base))
+                tasks.append(self._process_item(fetcher, node, page_base, data, errs))
             await asyncio.gather(*tasks)
 
             if self._reached_limit():
                 return
             url = next_page_url(self.cfg.pagination, page_base, tree, page_no, self.cfg.base_url)
+
+    def _parse_listing(self, res):
+        if self.cfg.fetch.format == "json":
+            root = parse_json(res.html)
+            return root, res.url, select_items(root, self.cfg.list.item_selector)
+        tree = parse_html(res.html)
+        return tree, document_base(tree, res.url), tree.css(self.cfg.list.item_selector)
+
+    def _passes_filters(self, data: dict) -> bool:
+        def text(k):
+            v = data.get(k)
+            return "" if v is None else str(v)
+        if any(not rx.search(text(k)) for k, rx in self._include.items()):
+            return False
+        return not any(rx.search(text(k)) for k, rx in self._exclude.items())
 
     async def _fetch_detail(self, fetcher, url: str) -> tuple[str, dict, list[str]] | None:
         res = await self._fetch_page(fetcher, url, "detail")
@@ -258,10 +288,11 @@ class Engine:
         current = {k: list_data.get(k) for k in list_fields}
         return item if to_json(stored) == to_json(current) else None
 
-    async def _process_item(self, fetcher, node, list_url: str) -> None:
-        data, errs = extract_fields(node, self.cfg.list.fields, list_url)
+    async def _process_item(self, fetcher, node, list_url: str, data: dict, errs: list[str]) -> None:
         source_url = list_url
         detail_url = extract_one(node, self.cfg.list.detail_url, base_url=list_url) if self.cfg.list.detail_url else None
+        if detail_url:
+            detail_url = urljoin(list_url, detail_url)  # en JSON las URLs pueden venir relativas
 
         if self.cfg.detail and detail_url:
             known = self._unchanged_since_last_fetch(data, detail_url)

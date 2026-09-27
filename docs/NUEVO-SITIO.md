@@ -48,6 +48,46 @@ fields:
 
 **Autocompletado:** la primera línea `# yaml-language-server: $schema=../schemas/site.schema.json` (la pone `init-site`) activa sugerencias y validación en VS Code con la extensión YAML de Red Hat. Si cambias el motor, regenera el esquema con `scraper schema`. Una clave mal escrita da error con sugerencia (`selecter` → "¿quisiste decir 'selector'?").
 
+### Webs con etiqueta/valor (fichas de la Administración)
+
+Muchas fichas públicas presentan los datos como `<dt>Tipo:</dt><dd>Servicios</dd>` o `<th>Importe</th><td>…</td>`. En vez de selectores frágiles, usa la etiqueta:
+
+```yaml
+    tipo:       { selector: "label:Tipo" }             # no distingue mayúsculas ni ':' final
+    referencia: { selector: "label:Referencia", required: true }
+```
+
+### Si existe una API: úsala (JSON)
+
+Antes de scrapear HTML, comprueba si el sitio tiene API o datos abiertos (ver [LEGAL.md](LEGAL.md)). Con `fetch.format: json` el listado es una respuesta JSON:
+
+```yaml
+fetch:
+  format: json
+  headers: { Accept: application/json }
+list:
+  item_selector: "..item"                     # ruta a los items: '..clave' busca a cualquier profundidad
+  detail_url: "json:url_html"                 # el detalle puede seguir siendo HTML
+  fields:
+    titulo:       { selector: "json:titulo" }
+    pdf:          { selector: "json:url_pdf.texto" }           # claves anidadas
+    seccion:      { selector: "json:@seccion.nombre" }         # dato del contenedor (ancestro) del item
+    fecha:        { selector: "json:$.data.metadatos.fecha", type: date }   # desde la raíz
+  include: { seccion: "^V" }                  # filtros por regex antes de descargar el detalle
+  exclude: { titulo: "(?i)anulaci" }
+```
+
+Rutas: `a.b.c` (al atravesar listas se recorren todos sus elementos), `lista[0]`, `lista[*]`, `..clave` (recursivo), `$` (raíz), `@clave` (ancestro más cercano al que se llegó por esa clave). Ejemplo completo: [sites/boe-licitaciones.yaml](../sites/boe-licitaciones.yaml).
+
+### Publicaciones por fecha (diarios oficiales)
+
+```yaml
+dates: { start: -7, end: 0, skip_weekdays: [6] }   # relativos a hoy, o fechas AAAA-MM-DD
+start_urls: ["/api/sumario/{date:%Y%m%d}"]
+```
+
+Se genera una URL por día; un 404 o un día sin items es normal (no hubo publicación). Desde la línea de comandos: `scraper run sites/x.yaml --desde 2026-09-01 --hasta 2026-09-26` o `--desde -3`. Para ejecución diaria basta `start: -3` (cubre fines de semana y reintenta días que fallaron); con `detail.refresh_days` alto no se vuelve a descargar nada ya guardado.
+
 ## 3. Clave natural
 
 `key: [campo1, campo2]` identifica un registro entre ejecuciones. Elige campos estables (referencia, título+fecha, URL). Si no se indica, se usa la URL de detalle (o la del listado, lo que provocaría colisiones: evítalo).

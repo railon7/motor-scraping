@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 — 2026-09-27
+
+Soporte de APIs JSON y piloto F5: licitaciones del BOE por su API de datos abiertos.
+
+- **Listados JSON** (`fetch.format: json`): `list.item_selector` es una ruta JSON y los campos usan `json:ruta`, con `..clave` (búsqueda recursiva), `$` (raíz), `@clave` (ancestro del item: sección, departamento…), `[n]` y `[*]`. El detalle puede seguir siendo HTML.
+- **URLs por fecha**: `{date:%Y%m%d}` en `start_urls` + bloque `dates` (`start`, `end`, `skip_weekdays`); `run/dry-run --desde/--hasta`. Un 404 o un día sin items no es error.
+- **Filtros de listado** `list.include` / `list.exclude` (regex por campo), aplicados antes de descargar el detalle y de contar para `--limit`.
+- **Selector `label:`** para pares `<dt>/<dd>` y `<th>/<td>`.
+- **Piloto** `sites/boe-licitaciones.yaml`: sección V-A del BOE (sumario JSON + ficha `txt.php`), respetando robots.txt.
+- Excel: textos de más de 32.767 caracteres se recortan (límite de celda).
+- `dry-run` recorta los valores largos al mostrar la muestra.
+- Tests: de 49 a 58.
+
 ## 0.2.0 — 2026-09-27
 
 Mejoras aplicadas a partir del análisis de 24 proyectos open source de scraping ([docs/conocimiento/](docs/conocimiento/README.md)).
